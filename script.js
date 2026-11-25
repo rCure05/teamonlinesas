@@ -312,23 +312,22 @@ tailwind.config = {
         .sort((a, b) => b.date.localeCompare(a.date));
 
     function updatePresetButtonsUI() {
-        const monthNames = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
         const prev = new Date(CURRENT_YEAR, now.getMonth() - 1, 1);
         const labels = {
-            'bulan-ini': `Bulan Ini (${monthNames[now.getMonth()]} ${CURRENT_YEAR})`,
-            'bulan-lalu': `Bulan Lalu (${monthNames[prev.getMonth()]} ${prev.getFullYear()})`,
+            'bulan-ini': `Bulan Ini (${MONTHS_SHORT[now.getMonth()]} ${CURRENT_YEAR})`,
+            'bulan-lalu': `Bulan Lalu (${MONTHS_SHORT[prev.getMonth()]} ${prev.getFullYear()})`,
             'tahun-ini': `Tahun ${CURRENT_YEAR}`
         };
         $$('.preset-btn').forEach(btn => {
             if (labels[btn.dataset.preset]) btn.textContent = labels[btn.dataset.preset];
             const active = btn.dataset.preset === dateFilter.preset;
             btn.className = active
-                ? 'preset-btn px-3 py-1.5 rounded-xl text-xs font-semibold bg-brand-600 text-white shadow-2xs'
-                : 'preset-btn px-3 py-1.5 rounded-xl text-xs font-medium bg-slate-100 text-slate-600 hover:bg-slate-200/70';
+                ? 'preset-btn px-3 py-2 sm:py-1.5 rounded-xl text-xs font-semibold bg-brand-600 text-white shadow-2xs text-center'
+                : 'preset-btn px-3 py-2 sm:py-1.5 rounded-xl text-xs font-medium bg-slate-100 text-slate-600 hover:bg-slate-200/70 text-center';
         });
 
         const s = formatDateID(dateFilter.startDate), e = formatDateID(dateFilter.endDate);
-        if ($('active-range-badge')) $('active-range-badge').textContent = dateFilter.preset === 'semua' ? `Menampilkan data: Semua Waktu (${s} – ${e})` : `Menampilkan data: ${s} – ${e}`;
+        if ($('active-range-badge')) $('active-range-badge').textContent = dateFilter.preset === 'semua' ? `Semua Waktu (${s} – ${e})` : `${s} – ${e}`;
         if ($('sidebar-period-label') && isAdmin) $('sidebar-period-label').textContent = `Rentang: ${s} – ${e}`;
     }
 
@@ -382,7 +381,6 @@ tailwind.config = {
             cumTxs.filter(t => t.type === 'masuk').reduce((s, t) => s + t.amount, 0) -
             cumTxs.filter(t => t.type === 'keluar').reduce((s, t) => s + t.amount, 0);
 
-        // Bangun data bulanan
         const [sY, sM] = (dateFilter.startDate || `${CURRENT_YEAR}-01-01`).split('-').map(Number);
         const [eY, eM] = (dateFilter.endDate || TODAY_ISO).split('-').map(Number);
         const months = [];
@@ -396,7 +394,6 @@ tailwind.config = {
             if (++m > 12) { m = 1; y++; }
         }
 
-        // Bangun kategori pengeluaran dinamis
         const catMap = new Map();
         keluarTxs.forEach(t => catMap.set(t.category || 'Lain-lain', (catMap.get(t.category || 'Lain-lain') || 0) + t.amount));
         const categories = Array.from(catMap.entries()).sort((a, b) => b[1] - a[1]).map(([category, amount]) => ({ category, amount }));
@@ -418,24 +415,24 @@ tailwind.config = {
         $('kpi-saldo').textContent = `${d.balance < 0 ? '- ' : ''}${formatRp(d.balance)}`;
         $('kpi-masuk').textContent = formatRp(d.income);
         $('kpi-keluar').textContent = formatRp(d.expenses);
-        $('kpi-masuk-count').textContent = `${d.incomeCount} transaksi masuk`;
-        $('kpi-keluar-count').textContent = `${d.expenseCount} transaksi keluar`;
+        $('kpi-masuk-count').textContent = `${d.incomeCount} masuk`;
+        $('kpi-keluar-count').textContent = `${d.expenseCount} keluar`;
         $('active-range-count').textContent = `${d.txCount} transaksi`;
         $('kpi-min-label').textContent = formatRp(d.minSaldo);
 
-        $('kpi-saldo-status').className = `inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border ${safe ? 'bg-emerald-50 text-emerald-700 border-emerald-200/70' : 'bg-rose-50 text-rose-700 border-rose-200/80'}`;
-        $('kpi-saldo-status').innerHTML = `${icon(safe ? 'shield-check' : 'alert-triangle', 'w-3 h-3')} <span>${safe ? 'Saldo Aman' : 'Di Bawah Minimal'}</span>`;
+        $('kpi-saldo-status').className = `inline-flex items-center self-start gap-1 px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-semibold border ${safe ? 'bg-emerald-50 text-emerald-700 border-emerald-200/70' : 'bg-rose-50 text-rose-700 border-rose-200/80'}`;
+        $('kpi-saldo-status').innerHTML = `${icon(safe ? 'shield-check' : 'alert-triangle', 'w-3 h-3')} <span>${safe ? 'Aman' : 'Di Bawah Min'}</span>`;
 
         $('kpi-net').textContent = `${pos ? '+' : '-'} ${formatRp(net)}`;
-        $('kpi-net').className = `text-xl sm:text-2xl font-extrabold ${pos ? 'text-emerald-600' : 'text-rose-600'} mt-1.5 truncate`;
-        $('kpi-net-badge').textContent = pos ? 'Surplus Periode' : 'Defisit Periode';
-        $('kpi-net-badge').className = `inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border ${pos ? 'bg-emerald-50 text-emerald-700 border-emerald-200/70' : 'bg-rose-50 text-rose-700 border-rose-200/70'}`;
-        $('kpi-net-icon-box').className = `w-10 h-10 rounded-xl ${pos ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'} flex items-center justify-center shrink-0`;
-        $('kpi-net-icon-box').innerHTML = icon(pos ? 'trending-up' : 'trending-down', 'w-5 h-5');
+        $('kpi-net').className = `text-[15px] sm:text-2xl font-extrabold tabular-nums ${pos ? 'text-emerald-600' : 'text-rose-600'} mt-1.5 truncate`;
+        $('kpi-net-badge').textContent = pos ? 'Surplus' : 'Defisit';
+        $('kpi-net-badge').className = `inline-flex items-center self-start px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-semibold border ${pos ? 'bg-emerald-50 text-emerald-700 border-emerald-200/70' : 'bg-rose-50 text-rose-700 border-rose-200/70'}`;
+        $('kpi-net-icon-box').className = `w-7 h-7 sm:w-9 sm:h-9 rounded-lg sm:rounded-xl ${pos ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'} flex items-center justify-center shrink-0`;
+        $('kpi-net-icon-box').innerHTML = icon(pos ? 'trending-up' : 'trending-down', 'w-4 h-4 sm:w-5 sm:h-5');
 
         if (isAdmin) {
             const paid = members.filter(m => getDueRecord(m).paid).length;
-            $('kpi-iuran-mini').textContent = `${paid}/${members.length} Lunas`;
+            $('kpi-iuran-mini').textContent = `${paid}/${members.length}`;
             $('widget-iuran-nominal').textContent = formatRp(kasConfig.iuranWajib);
             $('badge-iuran-count').textContent = `${paid}/${members.length}`;
             $('badge-tx-count').textContent = String(transactions.length);
@@ -459,8 +456,8 @@ tailwind.config = {
                 responsive: true, maintainAspectRatio: false, animation: { duration: 250 },
                 plugins: { legend: { display: false }, tooltip: { backgroundColor: '#0f172a', callbacks: { label: ctx => `${ctx.dataset.label}: ${formatRp(ctx.raw)}` } } },
                 scales: {
-                    x: { grid: { display: false }, ticks: { font: { family: 'Inter', size: 11 }, color: '#64748b' } },
-                    y: { border: { display: false }, grid: { color: '#f1f5f9' }, ticks: { font: { family: 'Inter', size: 11 }, color: '#64748b', callback: v => `Rp ${(v / 1000000).toFixed(v % 1000000 ? 1 : 0)} Jt` } }
+                    x: { grid: { display: false }, ticks: { font: { family: 'Inter', size: 10 }, color: '#64748b' } },
+                    y: { border: { display: false }, grid: { color: '#f1f5f9' }, ticks: { font: { family: 'Inter', size: 10 }, color: '#64748b', callback: v => `Rp ${(v / 1000000).toFixed(v % 1000000 ? 1 : 0)} Jt` } }
                 }
             }
         });
@@ -504,7 +501,7 @@ tailwind.config = {
         $('badge-approval-count').classList.toggle('hidden', approvalQueue.length === 0);
 
         $('approval-list').innerHTML = approvalQueue.length === 0
-            ? `<div class="py-10 text-center"><div class="w-11 h-11 rounded-full bg-emerald-50 text-emerald-500 flex items-center justify-center mx-auto mb-2.5">${icon('check-check', 'w-5 h-5')}</div><p class="text-sm font-semibold text-slate-800">Tidak Ada Antrean Persetujuan</p><p class="text-xs text-slate-400 mt-1">Semua pengajuan dana sudah dikonfirmasi.</p></div>`
+            ? `<div class="py-8 text-center"><div class="w-11 h-11 rounded-full bg-emerald-50 text-emerald-500 flex items-center justify-center mx-auto mb-2.5">${icon('check-check', 'w-5 h-5')}</div><p class="text-sm font-semibold text-slate-800">Tidak Ada Antrean Persetujuan</p><p class="text-xs text-slate-400 mt-1">Semua pengajuan dana sudah dikonfirmasi.</p></div>`
             : approvalQueue.map(item => `
                 <div class="p-3.5 rounded-xl border border-slate-200/80 bg-slate-50/50 hover:bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div class="min-w-0 space-y-1">
@@ -515,11 +512,11 @@ tailwind.config = {
                         <h4 class="text-sm font-bold text-slate-800 truncate">${esc(item.title)}</h4>
                         <p class="text-xs text-slate-500 truncate">Oleh <strong class="text-slate-700">${esc(item.requester)}</strong> • ${esc(item.role)}</p>
                     </div>
-                    <div class="flex sm:flex-col items-center sm:items-end justify-between gap-2 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-200/60 shrink-0">
+                    <div class="flex sm:flex-col items-center sm:items-end justify-between gap-2 pt-2.5 sm:pt-0 border-t sm:border-t-0 border-slate-200/60 shrink-0">
                         <span class="text-sm font-bold text-rose-600">${formatRp(item.amount)}</span>
                         <div class="flex items-center gap-1.5">
-                            <button type="button" data-action="reject-approval" data-id="${esc(item.id)}" class="px-2.5 py-1 rounded-lg text-xs font-semibold text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200/70">Tolak</button>
-                            <button type="button" data-action="approve-approval" data-id="${esc(item.id)}" class="px-3 py-1 rounded-lg text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700">Setujui</button>
+                            <button type="button" data-action="reject-approval" data-id="${esc(item.id)}" class="px-3 py-1.5 sm:py-1 rounded-lg text-xs font-semibold text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200/70">Tolak</button>
+                            <button type="button" data-action="approve-approval" data-id="${esc(item.id)}" class="px-3 py-1.5 sm:py-1 rounded-lg text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700">Setujui</button>
                         </div>
                     </div>
                 </div>`).join('');
@@ -557,7 +554,7 @@ tailwind.config = {
 
         const paid = members.filter(m => getDueRecord(m).paid).length;
         const pct = members.length ? Math.round((paid / members.length) * 100) : 0;
-        $('iuran-progress-text').textContent = members.length ? `${paid} dari ${members.length} Anggota (${pct}%)` : 'Belum ada anggota';
+        $('iuran-progress-text').textContent = members.length ? `${paid} dari ${members.length} (${pct}%)` : 'Belum ada anggota';
         $('iuran-progress-bar').style.width = `${pct}%`;
 
         const shown = dueStatusFilter === 'unpaid' ? members.filter(m => !getDueRecord(m).paid) : members;
@@ -567,7 +564,7 @@ tailwind.config = {
                 const due = getDueRecord(m);
                 const initials = m.name.split(' ').map(x => x[0] || '').join('').slice(0, 2).toUpperCase();
                 return `
-                <div class="flex items-center justify-between gap-3 p-3 rounded-xl border border-slate-100 hover:border-slate-200 bg-slate-50/40 hover:bg-white">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-3 rounded-xl border border-slate-100 hover:border-slate-200 bg-slate-50/40 hover:bg-white">
                     <div class="flex items-center gap-2.5 min-w-0">
                         <div class="w-8 h-8 rounded-full ${due.paid ? 'bg-brand-100 text-brand-700' : 'bg-slate-200 text-slate-600'} flex items-center justify-center text-xs font-bold shrink-0">${esc(initials)}</div>
                         <div class="min-w-0">
@@ -575,12 +572,12 @@ tailwind.config = {
                             <p class="text-[11px] text-slate-400 truncate">${esc(m.role)}</p>
                         </div>
                     </div>
-                    <div class="flex items-center gap-1.5 shrink-0">
-                        <button type="button" data-action="toggle-due" data-id="${m.id}" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border transition-colors ${due.paid ? 'bg-emerald-50 text-emerald-700 border-emerald-200/70 hover:bg-emerald-100' : 'bg-amber-50 text-amber-700 border-amber-200/80 hover:bg-emerald-600 hover:text-white hover:border-emerald-600'}">
+                    <div class="flex items-center justify-between sm:justify-end gap-1.5 shrink-0 pl-10 sm:pl-0">
+                        <button type="button" data-action="toggle-due" data-id="${m.id}" class="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1 px-2.5 py-1.5 sm:py-1 rounded-full text-xs font-semibold border transition-colors ${due.paid ? 'bg-emerald-50 text-emerald-700 border-emerald-200/70 hover:bg-emerald-100' : 'bg-amber-50 text-amber-700 border-amber-200/80 hover:bg-emerald-600 hover:text-white hover:border-emerald-600'}">
                             ${icon(due.paid ? 'check-circle-2' : 'clock', 'w-3.5 h-3.5')}
                             <span>${due.paid ? `Lunas${due.date ? ` (${esc(due.date)})` : ''}` : `Catat ${formatRp(kasConfig.iuranWajib)}`}</span>
                         </button>
-                        <button type="button" data-action="delete-member" data-id="${m.id}" class="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50" title="Hapus Anggota">${icon('trash-2', 'w-3.5 h-3.5')}</button>
+                        <button type="button" data-action="delete-member" data-id="${m.id}" class="p-2 sm:p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 shrink-0" title="Hapus Anggota">${icon('trash-2', 'w-3.5 h-3.5')}</button>
                     </div>
                 </div>`;
             }).join('');
@@ -612,7 +609,7 @@ tailwind.config = {
     }
 
     // ==========================================
-    // 5. RIWAYAT TRANSAKSI & MODAL CATAT / EDIT
+    // 5. RIWAYAT TRANSAKSI (MOBILE CARD & TABEL DESKTOP)
     // ==========================================
     function renderTransactions() {
         const q = ($('tx-search')?.value || '').toLowerCase().trim();
@@ -622,6 +619,39 @@ tailwind.config = {
         );
 
         $('tx-empty').classList.toggle('hidden', list.length > 0);
+
+        // Kartu Mobile untuk iPhone 13
+        if ($('tx-mobile-list')) {
+            $('tx-mobile-list').innerHTML = list.map(t => {
+                const isMasuk = t.type === 'masuk';
+                return `
+                <div class="p-4 space-y-2.5 hover:bg-slate-50/70">
+                    <div class="flex items-start justify-between gap-2.5">
+                        <div class="min-w-0">
+                            <div class="flex flex-wrap items-center gap-1.5 mb-1">
+                                <span class="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-slate-100 text-slate-600">${esc(t.category)}</span>
+                                <span class="text-[11px] text-slate-400 font-medium">${formatDateID(t.date)}</span>
+                            </div>
+                            <p class="font-bold text-slate-800 text-sm leading-snug break-words">${esc(t.title)}</p>
+                        </div>
+                        <span class="font-extrabold text-sm tabular-nums whitespace-nowrap shrink-0 ${isMasuk ? 'text-emerald-600' : 'text-rose-600'}">${isMasuk ? '+' : '-'} ${formatRp(t.amount)}</span>
+                    </div>
+                    <div class="flex items-center justify-between gap-2 pt-1">
+                        <div class="flex items-center gap-2 min-w-0 text-xs text-slate-500">
+                            <span class="truncate font-medium text-slate-700">${esc(t.pic)}</span>
+                            <span>•</span>
+                            <span class="font-mono text-[11px] text-slate-400 shrink-0">${esc(t.id)}</span>
+                        </div>
+                        <div class="flex items-center gap-1 shrink-0">
+                            <button type="button" data-action="edit-tx" data-id="${esc(t.id)}" class="p-2 rounded-lg text-slate-500 hover:text-brand-600 bg-slate-100/80 hover:bg-brand-50" title="Edit">${icon('pencil', 'w-3.5 h-3.5')}</button>
+                            <button type="button" data-action="delete-tx" data-id="${esc(t.id)}" class="p-2 rounded-lg text-slate-500 hover:text-rose-600 bg-slate-100/80 hover:bg-rose-50" title="Hapus">${icon('trash-2', 'w-3.5 h-3.5')}</button>
+                        </div>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        // Tabel Desktop
         $('tx-tbody').innerHTML = list.map(t => {
             const isMasuk = t.type === 'masuk';
             return `
@@ -732,7 +762,7 @@ tailwind.config = {
     // 6. NAVIGASI, EKSPOR EXCEL & BACKUP JSON
     // ==========================================
     function applyAccessMode() {
-        ['btn-admin-logout', 'btn-export-excel', 'btn-open-tx-modal', 'view-filter-bar', 'view-widgets', 'view-pengaturan', 'view-transaksi', 'sidebar-config-group', 'kpi-iuran-wrap']
+        ['admin-header-actions', 'view-filter-bar', 'view-widgets', 'view-pengaturan', 'view-transaksi', 'sidebar-config-group', 'kpi-iuran-wrap']
             .forEach(id => $(id)?.classList.toggle('hidden', !isAdmin));
         $('btn-admin-login')?.classList.toggle('hidden', isAdmin);
         $$('#sidebar-nav [data-tab]').forEach(btn => btn.classList.toggle('hidden', !isAdmin && btn.dataset.tab !== 'ringkasan'));
@@ -765,7 +795,7 @@ tailwind.config = {
 
         ['view-filter-bar', 'view-kpi', 'view-charts', 'view-widgets', 'card-approval', 'card-iuran', 'view-pengaturan', 'view-transaksi']
             .forEach(id => $(id)?.classList.toggle('hidden', !visible.includes(id)));
-        $('view-widgets').className = (tab === 'iuran' || tab === 'persetujuan') ? 'grid grid-cols-1 gap-6' : 'grid grid-cols-1 lg:grid-cols-2 gap-6';
+        $('view-widgets').className = (tab === 'iuran' || tab === 'persetujuan') ? 'grid grid-cols-1 gap-4 sm:gap-6' : 'grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6';
 
         if (window.innerWidth < 1024) toggleSidebar(true);
     }
@@ -887,8 +917,8 @@ tailwind.config = {
             const btn = e.target.closest('[data-action="filter-dues"]');
             if (!btn) return;
             dueStatusFilter = btn.dataset.mode;
-            $('btn-due-all').className = dueStatusFilter === 'all' ? 'px-2.5 py-1 rounded-lg font-semibold bg-white text-slate-800 shadow-2xs' : 'px-2.5 py-1 rounded-lg font-medium text-slate-500';
-            $('btn-due-unpaid').className = dueStatusFilter === 'unpaid' ? 'px-2.5 py-1 rounded-lg font-semibold bg-white text-slate-800 shadow-2xs' : 'px-2.5 py-1 rounded-lg font-medium text-slate-500';
+            $('btn-due-all').className = dueStatusFilter === 'all' ? 'px-2.5 py-1.5 sm:py-1 rounded-lg font-semibold bg-white text-slate-800 shadow-2xs' : 'px-2.5 py-1.5 sm:py-1 rounded-lg font-medium text-slate-500';
+            $('btn-due-unpaid').className = dueStatusFilter === 'unpaid' ? 'px-2.5 py-1.5 sm:py-1 rounded-lg font-semibold bg-white text-slate-800 shadow-2xs' : 'px-2.5 py-1.5 sm:py-1 rounded-lg font-medium text-slate-500';
             renderDues();
         });
 
@@ -970,7 +1000,7 @@ tailwind.config = {
             reader.readAsText(file);
         });
 
-        // Tabel Transaksi & Modal
+        // Tabel & Kartu Mobile Transaksi + Modal
         $('tx-search')?.addEventListener('input', renderTransactions);
         $('tx-type-filter-group')?.addEventListener('click', e => {
             const btn = e.target.closest('[data-action="filter-tx-type"]');
@@ -980,7 +1010,7 @@ tailwind.config = {
             renderTransactions();
         });
 
-        $('tx-tbody')?.addEventListener('click', e => {
+        const handleTxAction = e => {
             const btn = e.target.closest('[data-id]');
             if (!btn) return;
             if (btn.dataset.action === 'edit-tx') {
@@ -997,7 +1027,9 @@ tailwind.config = {
                     updateAll(); notify(`Transaksi "${rem.title}" dihapus.`, 'info');
                 }
             }
-        });
+        };
+        $('tx-tbody')?.addEventListener('click', handleTxAction);
+        $('tx-mobile-list')?.addEventListener('click', handleTxAction);
 
         $('btn-close-tx-modal')?.addEventListener('click', closeTxModal);
         $('btn-cancel-tx-modal')?.addEventListener('click', closeTxModal);
