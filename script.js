@@ -28,7 +28,7 @@ tailwind.config = {
     const CURRENT_MONTH = TODAY_ISO.slice(0, 7);
 
     // ==========================================
-    // 1. IKON SVG INLINE & HELPER FORMATTER
+    // 1. IKON SVG, HELPER & MODERN APP ALERT
     // ==========================================
     const ICONS = {
         'wallet': '<path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/>',
@@ -91,21 +91,51 @@ tailwind.config = {
         return `${prefix}-${String(max).padStart(2, '0')}`;
     }
 
-    function notify(msg, type = 'success') {
+    function notify(msg, type = 'success', customTitle = null) {
         const box = $('toast-container');
         if (!box) return;
-        const styles = {
-            success: ['bg-slate-900 text-white border-emerald-500/40', 'check-circle-2', 'text-emerald-400'],
-            warning: ['bg-amber-950 text-white border-amber-500/40', 'alert-triangle', 'text-amber-400'],
-            info: ['bg-brand-900 text-white border-brand-400/40', 'info', 'text-brand-300']
-        }[type] || ['bg-slate-900 text-white border-emerald-500/40', 'info', 'text-brand-300'];
+        const cfg = {
+            success: { title: 'Berhasil', icon: 'check-circle-2', iconBox: 'bg-emerald-50 text-emerald-600 ring-1 ring-emerald-500/20', bar: 'bg-emerald-500' },
+            warning: { title: 'Perhatian', icon: 'alert-triangle', iconBox: 'bg-amber-50 text-amber-600 ring-1 ring-amber-500/20', bar: 'bg-amber-500' },
+            danger:  { title: 'Dihapus', icon: 'trash-2', iconBox: 'bg-rose-50 text-rose-600 ring-1 ring-rose-500/20', bar: 'bg-rose-500' },
+            info:    { title: 'Informasi', icon: 'info', iconBox: 'bg-brand-50 text-brand-600 ring-1 ring-brand-500/20', bar: 'bg-brand-600' }
+        }[type] || { title: 'Informasi', icon: 'info', iconBox: 'bg-brand-50 text-brand-600 ring-1 ring-brand-500/20', bar: 'bg-brand-600' };
 
         const el = document.createElement('div');
-        el.className = `pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-xl border shadow-lg text-xs sm:text-sm font-medium transition-all duration-300 translate-y-3 opacity-0 ${styles[0]}`;
-        el.innerHTML = `${icon(styles[1], `w-4 h-4 shrink-0 ${styles[2]}`)}<span>${esc(msg)}</span>`;
+        el.setAttribute('role', 'status');
+        el.className = 'toast-item pointer-events-auto relative overflow-hidden bg-white/95 backdrop-blur-md text-slate-800 border border-slate-200/90 rounded-2xl shadow-xl shadow-slate-900/10 p-3.5 flex items-start gap-3 -translate-y-3 opacity-0 scale-95';
+        el.innerHTML = `
+            <div class="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${cfg.iconBox}">${icon(cfg.icon, 'w-4 h-4')}</div>
+            <div class="min-w-0 flex-1 pt-0.5">
+                <p class="text-xs font-bold text-slate-900 leading-tight">${esc(customTitle || cfg.title)}</p>
+                <p class="text-xs text-slate-600 mt-0.5 leading-relaxed break-words">${esc(msg)}</p>
+            </div>
+            <button type="button" aria-label="Tutup notifikasi" class="toast-close p-1 -mr-1 -mt-0.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 shrink-0">${icon('x', 'w-3.5 h-3.5')}</button>
+            <div class="toast-bar absolute bottom-0 left-0 h-0.5 w-full ${cfg.bar} origin-left"></div>
+        `;
+
         box.appendChild(el);
-        requestAnimationFrame(() => el.classList.remove('translate-y-3', 'opacity-0'));
-        setTimeout(() => { el.classList.add('translate-y-3', 'opacity-0'); setTimeout(() => el.remove(), 300); }, 3200);
+        requestAnimationFrame(() => el.classList.remove('-translate-y-3', 'opacity-0', 'scale-95'));
+
+        let timer = null;
+        const bar = el.querySelector('.toast-bar');
+        const close = () => {
+            clearTimeout(timer);
+            el.classList.add('-translate-y-2', 'opacity-0', 'scale-95');
+            setTimeout(() => el.remove(), 260);
+        };
+        const startTimer = (ms = 3400) => {
+            if (bar) {
+                bar.style.transition = `transform ${ms}ms linear`;
+                requestAnimationFrame(() => { bar.style.transform = 'scaleX(0)'; });
+            }
+            timer = setTimeout(close, ms);
+        };
+
+        el.querySelector('.toast-close')?.addEventListener('click', close);
+        el.addEventListener('mouseenter', () => { clearTimeout(timer); if (bar) bar.style.transition = 'none'; });
+        el.addEventListener('mouseleave', () => startTimer(1800));
+        startTimer();
     }
 
     function toggleModal(id, show) {
@@ -113,6 +143,49 @@ tailwind.config = {
         if (!el) return;
         el.classList.toggle('hidden', !show);
         el.classList.toggle('flex', show);
+    }
+
+    function confirmAction({ title = 'Konfirmasi', message = '', confirmText = 'Ya, Lanjutkan', cancelText = 'Batal', variant = 'danger' } = {}) {
+        return new Promise(resolve => {
+            const modal = $('confirm-modal');
+            const okBtn = $('btn-confirm-ok');
+            const cancelBtn = $('btn-confirm-cancel');
+            const iconBox = $('confirm-icon-box');
+            if (!modal || !okBtn || !cancelBtn) return resolve(false);
+
+            const styles = {
+                danger:  { box: 'bg-rose-50 text-rose-600', btn: 'bg-rose-600 hover:bg-rose-700 text-white', ic: 'trash-2' },
+                warning: { box: 'bg-amber-50 text-amber-600', btn: 'bg-amber-600 hover:bg-amber-700 text-white', ic: 'alert-triangle' },
+                brand:   { box: 'bg-brand-50 text-brand-600', btn: 'bg-brand-600 hover:bg-brand-700 text-white', ic: 'info' }
+            }[variant] || { box: 'bg-rose-50 text-rose-600', btn: 'bg-rose-600 hover:bg-rose-700 text-white', ic: 'alert-triangle' };
+
+            $('confirm-title').textContent = title;
+            $('confirm-message').textContent = message;
+            okBtn.textContent = confirmText;
+            cancelBtn.textContent = cancelText;
+            iconBox.className = `w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${styles.box}`;
+            iconBox.innerHTML = icon(styles.ic, 'w-5 h-5');
+            okBtn.className = `w-full px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold shadow-sm transition-colors ${styles.btn}`;
+
+            const cleanup = result => {
+                toggleModal('confirm-modal', false);
+                okBtn.removeEventListener('click', onOk);
+                cancelBtn.removeEventListener('click', onCancel);
+                modal.removeEventListener('click', onBackdrop);
+                document.removeEventListener('keydown', onKey);
+                resolve(result);
+            };
+            const onOk = () => cleanup(true);
+            const onCancel = () => cleanup(false);
+            const onBackdrop = e => { if (e.target === modal) cleanup(false); };
+            const onKey = e => { if (e.key === 'Escape') cleanup(false); };
+
+            okBtn.addEventListener('click', onOk);
+            cancelBtn.addEventListener('click', onCancel);
+            modal.addEventListener('click', onBackdrop);
+            document.addEventListener('keydown', onKey);
+            toggleModal('confirm-modal', true);
+        });
     }
 
     // ==========================================
@@ -190,30 +263,40 @@ tailwind.config = {
         saveTimer = setTimeout(async () => {
             try {
                 const token = await getValidToken();
-                await sbFetch('/rest/v1/kas_state?id=eq.main', {
-                    method: 'PATCH',
+                await sbFetch('/rest/v1/kas_state?on_conflict=id', {
+                    method: 'POST',
                     token,
-                    prefer: 'return=minimal',
-                    body: { state: { transactions, approvalQueue, members, kasConfig, duesPeriod }, updated_at: new Date().toISOString() }
+                    prefer: 'resolution=merge-duplicates,return=minimal',
+                    body: [{
+                        id: 'main',
+                        state: { transactions, approvalQueue, members, kasConfig, duesPeriod },
+                        updated_at: new Date().toISOString()
+                    }]
                 });
                 setStatus('Tersimpan di Supabase');
             } catch (err) {
                 console.error(err);
                 setStatus('Gagal menyimpan ke Supabase');
-                notify('Gagal menyimpan ke Supabase. Periksa koneksi internet.', 'warning');
+                notify('Gagal menyimpan ke Supabase. Periksa koneksi internet.', 'warning', 'Koneksi Terputus');
             } finally {
                 isSaving = false;
             }
         }, 350);
     }
 
+    async function verifyAdminAccess(token) {
+        const res = await sbFetch('/rest/v1/rpc/is_kas_admin', { method: 'POST', token, body: {} });
+        return res === true || res?.[0]?.is_kas_admin === true;
+    }
+
     async function signInAdmin(rawLogin, password) {
-        const email = rawLogin.includes('@') ? rawLogin : `${rawLogin.toLowerCase()}@teamonline.local`;
+        const clean = rawLogin.trim();
+        const email = clean.includes('@') ? clean.toLowerCase() : `${clean.toLowerCase()}@teamonline.local`;
         const session = await sbFetch('/auth/v1/token?grant_type=password', { method: 'POST', body: { email, password } });
         setSession({ ...session, expires_at: Math.floor(Date.now() / 1000) + Number(session.expires_in || 3600) });
         const token = await getValidToken();
         try {
-            if ((await sbFetch('/rest/v1/rpc/is_kas_admin', { method: 'POST', token, body: {} })) !== true) {
+            if (!(await verifyAdminAccess(token))) {
                 throw new Error('Akun ini belum memiliki akses admin.');
             }
             await loadAdminState();
@@ -225,11 +308,14 @@ tailwind.config = {
         isAdmin = true;
         publicSummary = null;
         applyAccessMode();
-        updateAll();
+        selectDatePreset('semua', false);
+        renderAll();
         setStatus('Admin tersambung • Supabase');
     }
 
     async function signOutAdmin() {
+        clearTimeout(saveTimer);
+        isSaving = false;
         const token = authSession?.access_token;
         setSession(null);
         isAdmin = false;
@@ -258,14 +344,13 @@ tailwind.config = {
             duesPeriod = CURRENT_MONTH;
             await sbFetch('/rest/v1/kas_state?on_conflict=id', {
                 method: 'POST', token, prefer: 'resolution=merge-duplicates,return=minimal',
-                body: [{ id: 'main', state: { transactions, approvalQueue, members, kasConfig, duesPeriod } }]
+                body: [{ id: 'main', state: { transactions, approvalQueue, members, kasConfig, duesPeriod }, updated_at: new Date().toISOString() }]
             });
         }
         normalizeMemberDues();
         syncSettingsInputs();
         syncMemberDatalist();
         if ($('dues-period')) $('dues-period').value = duesPeriod;
-        selectDatePreset('semua');
     }
 
     async function loadPublicSummary() {
@@ -278,10 +363,10 @@ tailwind.config = {
             console.error(err);
             publicSummary = { balance: 0, income: 0, expenses: 0, minSaldo: kasConfig.minSaldo, transactionsCount: 0, incomeCount: 0, expenseCount: 0, months: [], categories: [] };
             setStatus('Supabase belum siap • jalankan SQL setup');
-            notify('Database Supabase belum siap. Jalankan SQL setup terlebih dahulu.', 'warning');
+            notify('Database Supabase belum siap. Jalankan SQL setup terlebih dahulu.', 'warning', 'Setup Database');
         }
         applyAccessMode();
-        updateAll();
+        renderAll();
     }
 
     async function initSupabase() {
@@ -290,11 +375,12 @@ tailwind.config = {
             try {
                 authSession = JSON.parse(raw);
                 const token = await getValidToken();
-                if ((await sbFetch('/rest/v1/rpc/is_kas_admin', { method: 'POST', token, body: {} })) === true) {
+                if (await verifyAdminAccess(token)) {
                     await loadAdminState();
                     isAdmin = true;
                     applyAccessMode();
-                    updateAll();
+                    selectDatePreset('semua', false);
+                    renderAll();
                     setStatus('Admin tersambung • Supabase');
                     return;
                 }
@@ -322,7 +408,7 @@ tailwind.config = {
             if (labels[btn.dataset.preset]) btn.textContent = labels[btn.dataset.preset];
             const active = btn.dataset.preset === dateFilter.preset;
             btn.className = active
-                ? 'preset-btn px-3 py-2 sm:py-1.5 rounded-xl text-xs font-semibold bg-brand-600 text-white shadow-2xs text-center'
+                ? 'preset-btn px-3 py-2 sm:py-1.5 rounded-xl text-xs font-semibold bg-brand-600 text-white shadow-sm text-center'
                 : 'preset-btn px-3 py-2 sm:py-1.5 rounded-xl text-xs font-medium bg-slate-100 text-slate-600 hover:bg-slate-200/70 text-center';
         });
 
@@ -331,7 +417,7 @@ tailwind.config = {
         if ($('sidebar-period-label') && isAdmin) $('sidebar-period-label').textContent = `Rentang: ${s} – ${e}`;
     }
 
-    function selectDatePreset(preset) {
+    function selectDatePreset(preset, shouldRender = true) {
         dateFilter.preset = preset;
         const monthRange = ym => {
             const [y, m] = ym.split('-').map(Number);
@@ -351,7 +437,7 @@ tailwind.config = {
         if ($('filter-start-date')) $('filter-start-date').value = dateFilter.startDate;
         if ($('filter-end-date')) $('filter-end-date').value = dateFilter.endDate;
         updatePresetButtonsUI();
-        updateAll();
+        if (shouldRender) renderAll();
     }
 
     function buildSummaryData() {
@@ -523,16 +609,17 @@ tailwind.config = {
     }
 
     function processApproval(id, action) {
+        if (!isAdmin) return notify('Silakan masuk sebagai Admin terlebih dahulu.', 'warning', 'Akses Terbatas');
         const idx = approvalQueue.findIndex(a => a.id === id);
         if (idx === -1) return;
         const [req] = approvalQueue.splice(idx, 1);
         if (action === 'approve') {
             transactions.unshift({ id: createUniqueId('TX', transactions), date: req.date || TODAY_ISO, title: req.title, category: req.category, pic: req.requester, type: 'keluar', amount: req.amount, status: 'Disetujui' });
-            notify(`Pengajuan "${req.title}" disetujui (${formatRp(req.amount)}).`, 'success');
+            notify(`Pengajuan "${req.title}" disetujui (${formatRp(req.amount)}).`, 'success', 'Dana Disetujui');
         } else {
-            notify(`Pengajuan "${req.title}" ditolak.`, 'info');
+            notify(`Pengajuan "${req.title}" ditolak.`, 'danger', 'Pengajuan Ditolak');
         }
-        updateAll();
+        commitChanges();
     }
 
     const getDueRecord = m => m.duesByPeriod?.[duesPeriod] || { paid: false, date: '', transactionId: '' };
@@ -584,6 +671,7 @@ tailwind.config = {
     }
 
     function toggleDue(memberId) {
+        if (!isAdmin) return notify('Silakan masuk sebagai Admin terlebih dahulu.', 'warning', 'Akses Terbatas');
         const m = members.find(x => x.id === Number(memberId));
         if (!m) return;
         const prev = getDueRecord(m);
@@ -592,14 +680,14 @@ tailwind.config = {
         if (prev.paid) {
             if (prev.transactionId) transactions = transactions.filter(t => t.id !== prev.transactionId);
             m.duesByPeriod[duesPeriod] = { paid: false, date: '', transactionId: '' };
-            notify(`Pencatatan iuran ${m.name} dibatalkan.`, 'info');
+            notify(`Pencatatan iuran ${m.name} dibatalkan.`, 'info', 'Iuran Dibatalkan');
         } else {
             const txId = createUniqueId('TX', transactions);
             transactions.unshift({ id: txId, date: TODAY_ISO, title: `Iuran Wajib ${duesPeriod} — ${m.name}`, category: 'Iuran Anggota', pic: m.name, type: 'masuk', amount: kasConfig.iuranWajib, status: 'Disetujui', duesMemberId: m.id, duesPeriod });
             m.duesByPeriod[duesPeriod] = { paid: true, date: formatDateID(TODAY_ISO), transactionId: txId };
-            notify(`Iuran ${m.name} (${formatRp(kasConfig.iuranWajib)}) ditandai LUNAS!`, 'success');
+            notify(`Iuran ${m.name} (${formatRp(kasConfig.iuranWajib)}) ditandai LUNAS!`, 'success', 'Iuran Lunas');
         }
-        updateAll();
+        commitChanges();
     }
 
     function syncMemberDatalist() {
@@ -620,7 +708,6 @@ tailwind.config = {
 
         $('tx-empty').classList.toggle('hidden', list.length > 0);
 
-        // Kartu Mobile untuk iPhone 13
         if ($('tx-mobile-list')) {
             $('tx-mobile-list').innerHTML = list.map(t => {
                 const isMasuk = t.type === 'masuk';
@@ -651,7 +738,6 @@ tailwind.config = {
             }).join('');
         }
 
-        // Tabel Desktop
         $('tx-tbody').innerHTML = list.map(t => {
             const isMasuk = t.type === 'masuk';
             return `
@@ -682,6 +768,7 @@ tailwind.config = {
     }
 
     function openTxModal(tx = null) {
+        if (!isAdmin) return notify('Silakan masuk sebagai Admin untuk mencatat transaksi.', 'warning', 'Akses Terbatas');
         editingTxId = tx ? tx.id : null;
         $('tx-modal-title').textContent = tx ? `Edit Transaksi (${tx.id})` : 'Catat Transaksi Kas';
         $('tx-modal-subtitle').textContent = tx ? 'Perbarui rincian transaksi tercatat' : 'Input pemasukan atau pengeluaran tim';
@@ -716,6 +803,7 @@ tailwind.config = {
     }
 
     function handleSaveTx(keepOpen) {
+        if (!isAdmin) return notify('Silakan masuk sebagai Admin terlebih dahulu.', 'warning', 'Akses Terbatas');
         if (!$('tx-form').checkValidity()) return $('tx-form').reportValidity();
         const type = document.querySelector('input[name="txType"]:checked')?.value || 'masuk';
         const title = $('m-title').value.trim();
@@ -724,22 +812,22 @@ tailwind.config = {
         const category = $('m-category').value || 'Lain-lain';
         const pic = $('m-pic').value.trim() || 'Anggota Tim';
 
-        if (!title || amount <= 0 || !date) return notify('Lengkapi tanggal, keterangan, dan nominal yang valid.', 'warning');
+        if (!title || amount <= 0 || !date) return notify('Lengkapi tanggal, keterangan, dan nominal yang valid.', 'warning', 'Data Belum Lengkap');
 
         if (editingTxId) {
             const target = transactions.find(t => t.id === editingTxId);
             if (target) Object.assign(target, { type, date, category, amount, title, pic });
             closeTxModal();
-            updateAll();
-            return notify(`Perubahan transaksi "${title}" disimpan.`, 'success');
+            commitChanges();
+            return notify(`Perubahan transaksi "${title}" disimpan.`, 'success', 'Perubahan Disimpan');
         }
 
         if (date >= TODAY_ISO && type === 'keluar' && amount > kasConfig.limitTanpaApproval) {
             approvalQueue.unshift({ id: createUniqueId('REQ', approvalQueue), title, requester: pic, role: 'Anggota TEAM ONLINE', date, category, amount });
             if (keepOpen) { $('m-title').value = ''; $('m-amount').value = ''; $('m-title').focus(); }
             else closeTxModal();
-            updateAll();
-            return notify(`Melebihi batas ${formatRp(kasConfig.limitTanpaApproval)}. Masuk ke antrean Persetujuan.`, 'warning');
+            commitChanges();
+            return notify(`Melebihi batas ${formatRp(kasConfig.limitTanpaApproval)}. Masuk ke antrean Persetujuan.`, 'warning', 'Butuh Persetujuan');
         }
 
         transactions.unshift({ id: createUniqueId('TX', transactions), date, title, category, pic, type, amount, status: 'Disetujui' });
@@ -747,14 +835,14 @@ tailwind.config = {
         if (dateFilter.endDate && date > dateFilter.endDate) { dateFilter.endDate = date; dateFilter.preset = 'custom'; $('filter-end-date').value = date; }
 
         updatePresetButtonsUI();
-        updateAll();
+        commitChanges();
 
         if (keepOpen) {
             $('m-title').value = ''; $('m-amount').value = ''; $('m-title').focus();
-            notify(`Tersimpan (${formatDateID(date)})! Lanjut input berikutnya.`, 'success');
+            notify(`Tersimpan (${formatDateID(date)})! Lanjut input berikutnya.`, 'success', 'Transaksi Tercatat');
         } else {
             closeTxModal();
-            notify(`Transaksi "${title}" berhasil dicatat!`, 'success');
+            notify(`Transaksi "${title}" berhasil dicatat!`, 'success', 'Transaksi Tercatat');
         }
     }
 
@@ -762,10 +850,29 @@ tailwind.config = {
     // 6. NAVIGASI, EKSPOR EXCEL & BACKUP JSON
     // ==========================================
     function applyAccessMode() {
-        ['admin-header-actions', 'view-filter-bar', 'view-widgets', 'view-pengaturan', 'view-transaksi', 'sidebar-config-group', 'kpi-iuran-wrap']
+        const adminActions = $('admin-header-actions');
+        if (adminActions) {
+            adminActions.className = isAdmin
+                ? 'grid grid-cols-3 sm:flex items-center gap-1.5 sm:gap-2 w-full sm:w-auto'
+                : 'hidden';
+        }
+
+        ['view-filter-bar', 'view-pengaturan', 'view-transaksi', 'sidebar-config-group', 'kpi-iuran-wrap']
             .forEach(id => $(id)?.classList.toggle('hidden', !isAdmin));
+
         $('btn-admin-login')?.classList.toggle('hidden', isAdmin);
-        $$('#sidebar-nav [data-tab]').forEach(btn => btn.classList.toggle('hidden', !isAdmin && btn.dataset.tab !== 'ringkasan'));
+
+        const settingsLink = $('btn-kpi-goto-settings');
+        if (settingsLink) {
+            settingsLink.className = isAdmin
+                ? 'text-left sm:text-right text-[10px] sm:text-[11px] font-semibold text-brand-600 hover:underline truncate'
+                : 'text-left sm:text-right text-[10px] sm:text-[11px] font-semibold text-slate-500 cursor-default truncate';
+        }
+
+        $$('#sidebar-nav [data-tab]').forEach(btn => {
+            btn.classList.toggle('hidden', !isAdmin && btn.dataset.tab !== 'ringkasan');
+        });
+
         switchTab('ringkasan');
         if (!isAdmin) {
             $('header-subtitle').textContent = 'Ringkasan agregat kas. Rincian transaksi hanya dapat diakses admin.';
@@ -793,9 +900,19 @@ tailwind.config = {
         $('header-title').textContent = title;
         $('header-subtitle').textContent = sub;
 
-        ['view-filter-bar', 'view-kpi', 'view-charts', 'view-widgets', 'card-approval', 'card-iuran', 'view-pengaturan', 'view-transaksi']
+        ['view-filter-bar', 'view-kpi', 'view-charts', 'card-approval', 'card-iuran', 'view-pengaturan', 'view-transaksi']
             .forEach(id => $(id)?.classList.toggle('hidden', !visible.includes(id)));
-        $('view-widgets').className = (tab === 'iuran' || tab === 'persetujuan') ? 'grid grid-cols-1 gap-4 sm:gap-6' : 'grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6';
+
+        const widgetsEl = $('view-widgets');
+        if (widgetsEl) {
+            if (!visible.includes('view-widgets')) {
+                widgetsEl.className = 'hidden';
+            } else {
+                widgetsEl.className = (tab === 'iuran' || tab === 'persetujuan')
+                    ? 'grid grid-cols-1 gap-4 sm:gap-6'
+                    : 'grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6';
+            }
+        }
 
         if (window.innerWidth < 1024) toggleSidebar(true);
     }
@@ -814,6 +931,7 @@ tailwind.config = {
     }
 
     function exportExcel() {
+        if (!isAdmin) return notify('Silakan masuk sebagai Admin untuk mengekspor Excel.', 'warning', 'Akses Terbatas');
         const periodTxs = getFilteredTx();
         const chrono = [...periodTxs].sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
         const income = periodTxs.filter(t => t.type === 'masuk').reduce((s, t) => s + t.amount, 0);
@@ -844,16 +962,20 @@ tailwind.config = {
         const xml = `<?xml version="1.0" encoding="UTF-8"?><?mso-application progid="Excel.Sheet"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"><Styles><Style ss:ID="Header"><Font ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#4F46E5" ss:Pattern="Solid"/></Style><Style ss:ID="Currency"><NumberFormat ss:Format="&quot;Rp&quot; #,##0;[Red]-&quot;Rp&quot; #,##0"/></Style></Styles><Worksheet ss:Name="Ringkasan"><Table>${summaryRows}</Table></Worksheet><Worksheet ss:Name="Transaksi"><Table>${row(['ID', 'Tanggal', 'Keterangan', 'Kategori', 'PIC', 'Jenis', 'Pemasukan', 'Pengeluaran', 'Saldo', 'Status'].map(sCell)).replace(/<Cell>/g, '<Cell ss:StyleID="Header">')}${txRows}</Table></Worksheet></Workbook>`;
         const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([xml], { type: 'application/vnd.ms-excel' })), download: `Rekap_Kas_TEAM_ONLINE_${dateFilter.startDate}_sd_${dateFilter.endDate}.xls` });
         a.click();
-        notify('Rekap Excel berhasil diunduh.', 'success');
+        notify('Rekap Excel berhasil diunduh.', 'success', 'Ekspor Selesai');
     }
 
-    function updateAll() {
+    function renderAll() {
         renderKPIsAndCharts();
         if (!isAdmin) return;
-        saveState();
         renderApprovals();
         renderDues();
         renderTransactions();
+    }
+
+    function commitChanges() {
+        renderAll();
+        if (isAdmin) saveState();
     }
 
     // ==========================================
@@ -862,7 +984,7 @@ tailwind.config = {
     document.addEventListener('DOMContentLoaded', () => {
         $$('[data-icon]').forEach(el => { el.innerHTML = icon(el.dataset.icon, el.dataset.iconClass || 'w-4 h-4 shrink-0'); });
         syncSettingsInputs();
-        selectDatePreset('semua');
+        selectDatePreset('semua', false);
         applyAccessMode();
 
         $('btn-open-sidebar')?.addEventListener('click', () => toggleSidebar());
@@ -880,26 +1002,32 @@ tailwind.config = {
         $('admin-login-form')?.addEventListener('submit', async e => {
             e.preventDefault();
             const btn = e.target.querySelector('button[type="submit"]');
+            const prevText = btn.textContent;
             btn.disabled = true;
+            btn.textContent = 'Memproses...';
             try {
-                await signInAdmin($('admin-email').value.trim(), $('admin-password').value);
+                await signInAdmin($('admin-email').value, $('admin-password').value);
                 toggleModal('admin-login-modal', false);
                 e.target.reset();
-                notify('Berhasil masuk sebagai admin.', 'success');
+                notify('Berhasil masuk sebagai admin kas.', 'success', 'Login Berhasil');
             } catch (err) {
                 $('admin-login-error').textContent = err.message || 'Login gagal.';
                 $('admin-login-error').classList.remove('hidden');
-            } finally { btn.disabled = false; }
+            } finally {
+                btn.disabled = false;
+                btn.textContent = prevText;
+            }
         });
-        $('btn-admin-logout')?.addEventListener('click', async () => { await signOutAdmin(); notify('Keluar dari mode admin.', 'info'); });
+        $('btn-admin-logout')?.addEventListener('click', async () => { await signOutAdmin(); notify('Anda telah keluar dari mode admin.', 'info', 'Mode Publik'); });
 
         // Filter Tanggal
         $('preset-buttons-container')?.addEventListener('click', e => { const btn = e.target.closest('[data-action="preset-date"]'); if (btn) selectDatePreset(btn.dataset.preset); });
         $('btn-apply-custom-date')?.addEventListener('click', () => {
             const s = $('filter-start-date').value, e = $('filter-end-date').value;
-            if (!s || !e || s > e) return notify('Rentang tanggal tidak valid.', 'warning');
+            if (!s || !e || s > e) return notify('Pastikan tanggal mulai tidak melebihi tanggal akhir.', 'warning', 'Rentang Tidak Valid');
             Object.assign(dateFilter, { preset: 'custom', startDate: s, endDate: e });
-            updatePresetButtonsUI(); updateAll();
+            updatePresetButtonsUI();
+            renderAll();
         });
         $('btn-reset-custom-date')?.addEventListener('click', () => selectDatePreset('semua'));
 
@@ -917,84 +1045,108 @@ tailwind.config = {
             const btn = e.target.closest('[data-action="filter-dues"]');
             if (!btn) return;
             dueStatusFilter = btn.dataset.mode;
-            $('btn-due-all').className = dueStatusFilter === 'all' ? 'px-2.5 py-1.5 sm:py-1 rounded-lg font-semibold bg-white text-slate-800 shadow-2xs' : 'px-2.5 py-1.5 sm:py-1 rounded-lg font-medium text-slate-500';
-            $('btn-due-unpaid').className = dueStatusFilter === 'unpaid' ? 'px-2.5 py-1.5 sm:py-1 rounded-lg font-semibold bg-white text-slate-800 shadow-2xs' : 'px-2.5 py-1.5 sm:py-1 rounded-lg font-medium text-slate-500';
+            $('btn-due-all').className = dueStatusFilter === 'all' ? 'px-2.5 py-1.5 sm:py-1 rounded-lg font-semibold bg-white text-slate-800 shadow-sm' : 'px-2.5 py-1.5 sm:py-1 rounded-lg font-medium text-slate-500';
+            $('btn-due-unpaid').className = dueStatusFilter === 'unpaid' ? 'px-2.5 py-1.5 sm:py-1 rounded-lg font-semibold bg-white text-slate-800 shadow-sm' : 'px-2.5 py-1.5 sm:py-1 rounded-lg font-medium text-slate-500';
             renderDues();
         });
 
-        $('dues-period')?.addEventListener('change', e => { if (/^\d{4}-(0[1-9]|1[0-2])$/.test(e.target.value)) { duesPeriod = e.target.value; updateAll(); } });
-        $('dues-list')?.addEventListener('click', e => {
+        $('dues-period')?.addEventListener('change', e => { if (/^\d{4}-(0[1-9]|1[0-2])$/.test(e.target.value)) { duesPeriod = e.target.value; commitChanges(); } });
+        $('dues-list')?.addEventListener('click', async e => {
             const btn = e.target.closest('[data-id]');
-            if (btn?.dataset.action === 'toggle-due') toggleDue(btn.dataset.id);
-            if (btn?.dataset.action === 'delete-member') {
+            if (!btn) return;
+            if (btn.dataset.action === 'toggle-due') toggleDue(btn.dataset.id);
+            if (btn.dataset.action === 'delete-member') {
+                if (!isAdmin) return;
                 const idx = members.findIndex(m => m.id === Number(btn.dataset.id));
-                if (idx !== -1 && confirm(`Hapus anggota "${members[idx].name}"?`)) {
+                if (idx !== -1 && await confirmAction({
+                    title: 'Hapus Anggota?',
+                    message: `Anggota "${members[idx].name}" akan dihapus dari daftar iuran tim.`,
+                    confirmText: 'Ya, Hapus',
+                    variant: 'danger'
+                })) {
                     const [rem] = members.splice(idx, 1);
-                    syncMemberDatalist(); updateAll();
-                    notify(`Anggota "${rem.name}" dihapus.`, 'info');
+                    syncMemberDatalist();
+                    commitChanges();
+                    notify(`Anggota "${rem.name}" dihapus dari daftar.`, 'danger', 'Anggota Dihapus');
                 }
             }
         });
 
         $('add-member-form')?.addEventListener('submit', e => {
             e.preventDefault();
+            if (!isAdmin) return;
             const name = $('new-member-name').value.trim();
-            if (!name) return notify('Masukkan nama anggota.', 'warning');
-            if (members.some(m => m.name.toLowerCase() === name.toLowerCase())) return notify(`Anggota "${name}" sudah terdaftar.`, 'warning');
+            if (!name) return notify('Masukkan nama anggota terlebih dahulu.', 'warning', 'Nama Kosong');
+            if (members.some(m => m.name.toLowerCase() === name.toLowerCase())) return notify(`Anggota "${name}" sudah terdaftar.`, 'warning', 'Sudah Terdaftar');
             members.push({ id: members.reduce((max, m) => Math.max(max, m.id), 0) + 1, name, role: $('new-member-role').value.trim() || 'Anggota Tim', duesByPeriod: {} });
             $('new-member-name').value = ''; $('new-member-role').value = '';
-            syncMemberDatalist(); updateAll();
-            notify(`Anggota "${name}" ditambahkan.`, 'success');
+            syncMemberDatalist();
+            commitChanges();
+            notify(`Anggota "${name}" berhasil ditambahkan.`, 'success', 'Anggota Baru');
         });
 
         // Pengaturan Kas & Backup JSON
         $('kas-settings-form')?.addEventListener('submit', e => {
             e.preventDefault();
+            if (!isAdmin) return;
             const iuran = parseCurrency($('input-iuran-wajib').value);
-            if (iuran <= 0) return notify('Nominal iuran wajib harus lebih dari Rp 0.', 'warning');
+            if (iuran <= 0) return notify('Nominal iuran wajib harus lebih dari Rp 0.', 'warning', 'Nominal Tidak Valid');
             kasConfig = {
                 openingBalance: parseCurrency($('input-opening-balance').value),
                 minSaldo: parseCurrency($('input-min-saldo').value),
                 iuranWajib: iuran,
                 limitTanpaApproval: parseCurrency($('input-limit-auto').value)
             };
-            syncSettingsInputs(); updateAll();
-            notify('Pengaturan kas disimpan ke Supabase!', 'success');
+            syncSettingsInputs();
+            commitChanges();
+            notify('Pengaturan kas berhasil disimpan ke Supabase!', 'success', 'Pengaturan Tersimpan');
         });
 
         $('btn-reset-kas-settings')?.addEventListener('click', () => {
+            if (!isAdmin) return;
             kasConfig = { openingBalance: 0, minSaldo: 10000000, iuranWajib: 250000, limitTanpaApproval: 500000 };
-            syncSettingsInputs(); updateAll();
-            notify('Pengaturan dikembalikan ke default.', 'info');
+            syncSettingsInputs();
+            commitChanges();
+            notify('Pengaturan dikembalikan ke standar awal.', 'info', 'Reset Default');
         });
 
         $('btn-export-backup')?.addEventListener('click', () => {
+            if (!isAdmin) return;
             const a = Object.assign(document.createElement('a'), {
                 href: URL.createObjectURL(new Blob([JSON.stringify({ format: 'team-online-cash-backup', version: 1, exportedAt: new Date().toISOString(), transactions, approvalQueue, members, kasConfig, duesPeriod }, null, 2)], { type: 'application/json' })),
                 download: `Backup_Kas_TEAM_ONLINE_${TODAY_ISO}.json`
             });
             a.click();
-            notify('Backup JSON berhasil diunduh.', 'success');
+            notify('File backup JSON berhasil diunduh.', 'success', 'Backup Diunduh');
         });
 
-        $('btn-import-backup')?.addEventListener('click', () => $('backup-file').click());
+        $('btn-import-backup')?.addEventListener('click', () => { if (isAdmin) $('backup-file').click(); });
         $('backup-file')?.addEventListener('change', e => {
             const file = e.target.files?.[0];
-            if (!file) return;
+            if (!file || !isAdmin) return;
             const reader = new FileReader();
-            reader.onload = () => {
+            reader.onload = async () => {
                 try {
                     const b = JSON.parse(String(reader.result));
                     if (!Array.isArray(b.transactions) || !Array.isArray(b.members) || !b.kasConfig) throw new Error();
-                    if (!confirm('Pulihkan backup akan mengganti seluruh data saat ini. Lanjutkan?')) return;
+                    if (!(await confirmAction({
+                        title: 'Pulihkan Data Backup?',
+                        message: 'Seluruh transaksi, anggota, dan pengaturan saat ini akan diganti dengan data dari file backup.',
+                        confirmText: 'Ya, Pulihkan',
+                        variant: 'warning'
+                    }))) return;
                     transactions = b.transactions;
                     approvalQueue = Array.isArray(b.approvalQueue) ? b.approvalQueue : [];
                     members = b.members;
                     kasConfig = { openingBalance: Number(b.kasConfig.openingBalance) || 0, minSaldo: Number(b.kasConfig.minSaldo) ?? 10000000, iuranWajib: Number(b.kasConfig.iuranWajib) || 250000, limitTanpaApproval: Number(b.kasConfig.limitTanpaApproval) ?? 500000 };
                     duesPeriod = b.duesPeriod || CURRENT_MONTH;
-                    normalizeMemberDues(); syncSettingsInputs(); syncMemberDatalist(); selectDatePreset('semua'); updateAll();
-                    notify('Backup berhasil dipulihkan!', 'success');
-                } catch { notify('File backup tidak valid.', 'warning'); }
+                    normalizeMemberDues();
+                    syncSettingsInputs();
+                    syncMemberDatalist();
+                    selectDatePreset('semua', false);
+                    commitChanges();
+                    notify('Seluruh data berhasil dipulihkan dari backup!', 'success', 'Backup Dipulihkan');
+                } catch { notify('Format file backup tidak valid atau rusak.', 'warning', 'Gagal Memulihkan'); }
                 finally { e.target.value = ''; }
             };
             reader.readAsText(file);
@@ -1006,25 +1158,31 @@ tailwind.config = {
             const btn = e.target.closest('[data-action="filter-tx-type"]');
             if (!btn) return;
             txTypeFilter = btn.dataset.type;
-            $$('.tx-tab-btn').forEach(b => { b.className = b.dataset.type === txTypeFilter ? 'tx-tab-btn px-3 py-1.5 rounded-lg bg-white text-slate-900 shadow-2xs font-semibold' : 'tx-tab-btn px-3 py-1.5 rounded-lg text-slate-500'; });
+            $$('.tx-tab-btn').forEach(b => { b.className = b.dataset.type === txTypeFilter ? 'tx-tab-btn px-3 py-1.5 rounded-lg bg-white text-slate-900 shadow-sm font-semibold' : 'tx-tab-btn px-3 py-1.5 rounded-lg text-slate-500'; });
             renderTransactions();
         });
 
-        const handleTxAction = e => {
+        const handleTxAction = async e => {
             const btn = e.target.closest('[data-id]');
-            if (!btn) return;
+            if (!btn || !isAdmin) return;
             if (btn.dataset.action === 'edit-tx') {
                 const tx = transactions.find(t => t.id === btn.dataset.id);
                 if (tx) openTxModal(tx);
             } else if (btn.dataset.action === 'delete-tx') {
                 const idx = transactions.findIndex(t => t.id === btn.dataset.id);
-                if (idx !== -1 && confirm(`Hapus transaksi "${transactions[idx].title}"?`)) {
+                if (idx !== -1 && await confirmAction({
+                    title: 'Hapus Transaksi?',
+                    message: `Transaksi "${transactions[idx].title}" akan dihapus permanen dan saldo kas otomatis disesuaikan.`,
+                    confirmText: 'Ya, Hapus',
+                    variant: 'danger'
+                })) {
                     const [rem] = transactions.splice(idx, 1);
                     if (rem.duesMemberId !== undefined && rem.duesPeriod) {
                         const m = members.find(x => Number(x.id) === Number(rem.duesMemberId));
                         if (m?.duesByPeriod?.[rem.duesPeriod]) m.duesByPeriod[rem.duesPeriod] = { paid: false, date: '', transactionId: '' };
                     }
-                    updateAll(); notify(`Transaksi "${rem.title}" dihapus.`, 'info');
+                    commitChanges();
+                    notify(`Transaksi "${rem.title}" dihapus.`, 'danger', 'Transaksi Dihapus');
                 }
             }
         };
