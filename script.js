@@ -32,6 +32,9 @@ tailwind.config = {
     // ==========================================
     const ICONS = {
         'wallet': '<path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/>',
+        'lock': '<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+        'eye': '<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/>',
+        'arrow-right': '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
         'menu': '<line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/>',
         'x': '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
         'layout-dashboard': '<rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/>',
@@ -145,6 +148,27 @@ tailwind.config = {
         el.classList.toggle('flex', show);
     }
 
+    function openPortal(isLoading = false) {
+        const portal = $('access-portal');
+        if (!portal) return;
+        portal.classList.remove('hidden', 'opacity-0', 'pointer-events-none');
+        $('portal-loading')?.classList.toggle('hidden', !isLoading);
+        $('portal-choice')?.classList.toggle('hidden', isLoading);
+        document.body.classList.add('overflow-hidden');
+    }
+
+    function closePortal() {
+        const portal = $('access-portal');
+        if (!portal) return;
+        portal.classList.add('opacity-0', 'pointer-events-none');
+        document.body.classList.remove('overflow-hidden');
+        setTimeout(() => {
+            if (portal.classList.contains('pointer-events-none')) {
+                portal.classList.add('hidden');
+            }
+        }, 300);
+    }
+
     function confirmAction({ title = 'Konfirmasi', message = '', confirmText = 'Ya, Lanjutkan', cancelText = 'Batal', variant = 'danger' } = {}) {
         return new Promise(resolve => {
             const modal = $('confirm-modal');
@@ -195,6 +219,8 @@ tailwind.config = {
     let dateFilter = { preset: 'semua', startDate: `${CURRENT_YEAR}-01-01`, endDate: TODAY_ISO };
     let txTypeFilter = 'all';
     let dueStatusFilter = 'all';
+    let publicDueFilter = 'all';
+    let publicDuesPeriod = CURRENT_MONTH;
     let duesPeriod = CURRENT_MONTH;
     let editingTxId = null;
 
@@ -212,7 +238,10 @@ tailwind.config = {
 
     window.addEventListener('beforeunload', e => { if (isSaving) { e.preventDefault(); e.returnValue = ''; } });
 
-    const setStatus = msg => { if ($('connection-status')) $('connection-status').textContent = msg; };
+    const setStatus = msg => {
+        if ($('connection-status')) $('connection-status').textContent = msg;
+        if ($('portal-status')) $('portal-status').textContent = msg;
+    };
 
     function setSession(session) {
         authSession = session;
@@ -310,6 +339,7 @@ tailwind.config = {
         applyAccessMode();
         selectDatePreset('semua', false);
         renderAll();
+        closePortal();
         setStatus('Admin tersambung • Supabase');
     }
 
@@ -320,7 +350,20 @@ tailwind.config = {
         setSession(null);
         isAdmin = false;
         if (token) sbFetch('/auth/v1/logout', { method: 'POST', token }).catch(() => {});
+        openPortal(true);
         await loadPublicSummary();
+        openPortal(false);
+    }
+
+    function normalizeMemberList(rawList) {
+        if (!Array.isArray(rawList)) return [];
+        return rawList.map(m => {
+            const duesByPeriod = m.duesByPeriod && typeof m.duesByPeriod === 'object' ? { ...m.duesByPeriod } : {};
+            if (!duesByPeriod[LEGACY_PERIOD] && typeof m.paid === 'boolean') {
+                duesByPeriod[LEGACY_PERIOD] = { paid: m.paid, date: m.date && m.date !== '-' ? m.date : '', transactionId: '', legacy: true };
+            }
+            return { ...m, duesByPeriod };
+        });
     }
 
     async function loadAdminState() {
@@ -330,7 +373,7 @@ tailwind.config = {
         if (saved && typeof saved === 'object') {
             transactions = Array.isArray(saved.transactions) ? saved.transactions : [];
             approvalQueue = Array.isArray(saved.approvalQueue) ? saved.approvalQueue : [];
-            members = Array.isArray(saved.members) ? saved.members : [];
+            members = normalizeMemberList(saved.members);
             kasConfig = {
                 openingBalance: Number(saved.kasConfig?.openingBalance) || 0,
                 minSaldo: Number(saved.kasConfig?.minSaldo) ?? 10000000,
@@ -347,7 +390,6 @@ tailwind.config = {
                 body: [{ id: 'main', state: { transactions, approvalQueue, members, kasConfig, duesPeriod }, updated_at: new Date().toISOString() }]
             });
         }
-        normalizeMemberDues();
         syncSettingsInputs();
         syncMemberDatalist();
         if ($('dues-period')) $('dues-period').value = duesPeriod;
@@ -358,11 +400,15 @@ tailwind.config = {
         setStatus('Memuat ringkasan kas...');
         try {
             publicSummary = await sbFetch('/rest/v1/rpc/get_public_kas_summary', { method: 'POST', body: {} });
-            setStatus('Ringkasan publik • hanya lihat');
+            publicDuesPeriod = /^\d{4}-(0[1-9]|1[0-2])$/.test(publicSummary?.duesPeriod)
+                ? publicSummary.duesPeriod
+                : CURRENT_MONTH;
+            setStatus('Tersambung • Mode Tamu');
         } catch (err) {
             console.error(err);
-            publicSummary = { balance: 0, income: 0, expenses: 0, minSaldo: kasConfig.minSaldo, transactionsCount: 0, incomeCount: 0, expenseCount: 0, months: [], categories: [] };
-            setStatus('Supabase belum siap • jalankan SQL setup');
+            publicSummary = { balance: 0, income: 0, expenses: 0, minSaldo: kasConfig.minSaldo, iuranWajib: kasConfig.iuranWajib, duesPeriod: CURRENT_MONTH, transactionsCount: 0, incomeCount: 0, expenseCount: 0, months: [], categories: [], members: [] };
+            publicDuesPeriod = CURRENT_MONTH;
+            setStatus('Database belum siap');
             notify('Database Supabase belum siap. Jalankan SQL setup terlebih dahulu.', 'warning', 'Setup Database');
         }
         applyAccessMode();
@@ -370,6 +416,7 @@ tailwind.config = {
     }
 
     async function initSupabase() {
+        openPortal(true);
         const raw = localStorage.getItem(AUTH_KEY);
         if (raw) {
             try {
@@ -381,6 +428,7 @@ tailwind.config = {
                     applyAccessMode();
                     selectDatePreset('semua', false);
                     renderAll();
+                    closePortal();
                     setStatus('Admin tersambung • Supabase');
                     return;
                 }
@@ -388,6 +436,7 @@ tailwind.config = {
             setSession(null);
         }
         await loadPublicSummary();
+        openPortal(false);
     }
 
     // ==========================================
@@ -579,7 +628,106 @@ tailwind.config = {
     }
 
     // ==========================================
-    // 4. PERSETUJUAN DANA & IURAN ANGGOTA
+    // 4. RIWAYAT PEMBAYARAN IURAN WAJIB (MODE TAMU)
+    // ==========================================
+    function renderPublicDues() {
+        const listEl = $('public-dues-list');
+        if (!listEl) return;
+
+        const periodInput = $('public-dues-period');
+        if (periodInput && periodInput.value !== publicDuesPeriod) periodInput.value = publicDuesPeriod;
+
+        const [y, mo] = publicDuesPeriod.split('-').map(Number);
+        const periodTitle = new Date(y, mo - 1, 1).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
+        const iuranAmt = Number(publicSummary?.iuranWajib) || kasConfig.iuranWajib;
+
+        if ($('public-iuran-nominal')) $('public-iuran-nominal').textContent = formatRp(iuranAmt);
+        if ($('public-iuran-period-label')) $('public-iuran-period-label').textContent = periodTitle;
+
+        const pubMembers = normalizeMemberList(publicSummary?.members);
+        const getPubDue = m => m.duesByPeriod?.[publicDuesPeriod] || { paid: false, date: '' };
+
+        const paidMembers = pubMembers.filter(m => getPubDue(m).paid);
+        const unpaidMembers = pubMembers.filter(m => !getPubDue(m).paid);
+        const pct = pubMembers.length ? Math.round((paidMembers.length / pubMembers.length) * 100) : 0;
+
+        if ($('public-iuran-progress-text')) {
+            $('public-iuran-progress-text').textContent = pubMembers.length
+                ? `${paidMembers.length} dari ${pubMembers.length} anggota sudah bayar (${pct}%)`
+                : 'Belum ada data anggota terdaftar';
+        }
+        if ($('public-iuran-progress-bar')) $('public-iuran-progress-bar').style.width = `${pct}%`;
+
+        // Update label jumlah pada tombol filter Mode Tamu
+        $$('#public-due-filter-group [data-action="filter-public-dues"]').forEach(btn => {
+            const mode = btn.dataset.mode;
+            const labelMap = {
+                all: `Semua (${pubMembers.length})`,
+                paid: `Sudah Bayar (${paidMembers.length})`,
+                unpaid: `Belum Bayar (${unpaidMembers.length})`
+            };
+            btn.textContent = labelMap[mode] || btn.textContent;
+            const active = mode === publicDueFilter;
+            btn.className = active
+                ? 'pub-due-btn px-2.5 py-1.5 sm:py-1 rounded-lg bg-white text-slate-900 shadow-sm font-semibold'
+                : 'pub-due-btn px-2.5 py-1.5 sm:py-1 rounded-lg text-slate-500 hover:text-slate-800';
+        });
+
+        const bannerEl = $('public-unpaid-banner');
+        if (bannerEl) {
+            bannerEl.classList.toggle('hidden', pubMembers.length === 0 || unpaidMembers.length === 0);
+        }
+
+        // Urutkan yang sudah bayar di atas agar terlihat jelas daftar lunas, diikuti yang belum bayar
+        const sortedMembers = [...paidMembers, ...unpaidMembers];
+        const shown = publicDueFilter === 'paid'
+            ? paidMembers
+            : publicDueFilter === 'unpaid'
+                ? unpaidMembers
+                : sortedMembers;
+
+        if (pubMembers.length === 0) {
+            listEl.innerHTML = `<div class="col-span-full py-8 text-center text-xs text-slate-500">Daftar anggota iuran belum tersedia atau database belum diperbarui.</div>`;
+            return;
+        }
+
+        if (shown.length === 0) {
+            listEl.innerHTML = `<div class="col-span-full py-8 text-center text-xs text-slate-500">${publicDueFilter === 'paid' ? 'Belum ada anggota yang tercatat lunas pada periode ini.' : 'Semua anggota sudah melunasi iuran wajib pada periode ini!'}</div>`;
+            return;
+        }
+
+        listEl.innerHTML = shown.map(m => {
+            const due = getPubDue(m);
+            const initials = m.name.split(' ').map(x => x[0] || '').join('').slice(0, 2).toUpperCase();
+            return `
+            <div class="flex items-center justify-between gap-3 p-3.5 rounded-xl border transition-colors ${due.paid ? 'border-emerald-200/70 bg-emerald-50/30' : 'border-slate-200/80 bg-slate-50/50'}">
+                <div class="flex items-center gap-3 min-w-0">
+                    <div class="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${due.paid ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}">${esc(initials)}</div>
+                    <div class="min-w-0">
+                        <p class="text-xs sm:text-sm font-bold text-slate-800 truncate">${esc(m.name)}</p>
+                        <p class="text-[11px] text-slate-500 truncate">${esc(m.role || 'Anggota Tim')}</p>
+                    </div>
+                </div>
+                <div class="text-right shrink-0">
+                    ${due.paid
+                        ? `<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/80">
+                            ${icon('check-circle-2', 'w-3.5 h-3.5')}
+                            <span>Sudah Bayar</span>
+                           </span>
+                           ${due.date ? `<p class="text-[10px] text-slate-400 mt-1">Tgl: ${esc(due.date)}</p>` : ''}`
+                        : `<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200/80">
+                            ${icon('clock', 'w-3.5 h-3.5')}
+                            <span>Belum Bayar</span>
+                           </span>
+                           <p class="text-[10px] text-slate-400 mt-1">${formatRp(iuranAmt)}</p>`
+                    }
+                </div>
+            </div>`;
+        }).join('');
+    }
+
+    // ==========================================
+    // 5. PERSETUJUAN DANA & IURAN ANGGOTA (ADMIN)
     // ==========================================
     function renderApprovals() {
         $('pill-approval-count').textContent = `${approvalQueue.length} Menunggu`;
@@ -623,16 +771,6 @@ tailwind.config = {
     }
 
     const getDueRecord = m => m.duesByPeriod?.[duesPeriod] || { paid: false, date: '', transactionId: '' };
-
-    function normalizeMemberDues() {
-        members = members.map(m => {
-            const duesByPeriod = m.duesByPeriod && typeof m.duesByPeriod === 'object' ? m.duesByPeriod : {};
-            if (!duesByPeriod[LEGACY_PERIOD] && typeof m.paid === 'boolean') {
-                duesByPeriod[LEGACY_PERIOD] = { paid: m.paid, date: m.date && m.date !== '-' ? m.date : '', transactionId: '', legacy: true };
-            }
-            return { ...m, duesByPeriod };
-        });
-    }
 
     function renderDues() {
         if ($('dues-period') && $('dues-period').value !== duesPeriod) $('dues-period').value = duesPeriod;
@@ -697,7 +835,7 @@ tailwind.config = {
     }
 
     // ==========================================
-    // 5. RIWAYAT TRANSAKSI (MOBILE CARD & TABEL DESKTOP)
+    // 6. RIWAYAT TRANSAKSI (MOBILE CARD & TABEL DESKTOP)
     // ==========================================
     function renderTransactions() {
         const q = ($('tx-search')?.value || '').toLowerCase().trim();
@@ -847,7 +985,7 @@ tailwind.config = {
     }
 
     // ==========================================
-    // 6. NAVIGASI, EKSPOR EXCEL & BACKUP JSON
+    // 7. NAVIGASI, EKSPOR EXCEL (.XLSX) & BACKUP JSON
     // ==========================================
     function applyAccessMode() {
         const adminActions = $('admin-header-actions');
@@ -857,10 +995,15 @@ tailwind.config = {
                 : 'hidden';
         }
 
+        const guestActions = $('guest-header-actions');
+        if (guestActions) {
+            guestActions.className = isAdmin ? 'hidden' : 'flex items-center gap-1.5 shrink-0';
+        }
+
+        $('view-public-dues')?.classList.toggle('hidden', isAdmin);
+
         ['view-filter-bar', 'view-pengaturan', 'view-transaksi', 'sidebar-config-group', 'kpi-iuran-wrap']
             .forEach(id => $(id)?.classList.toggle('hidden', !isAdmin));
-
-        $('btn-admin-login')?.classList.toggle('hidden', isAdmin);
 
         const settingsLink = $('btn-kpi-goto-settings');
         if (settingsLink) {
@@ -875,7 +1018,7 @@ tailwind.config = {
 
         switchTab('ringkasan');
         if (!isAdmin) {
-            $('header-subtitle').textContent = 'Ringkasan agregat kas. Rincian transaksi hanya dapat diakses admin.';
+            $('header-subtitle').textContent = 'Ringkasan saldo kas, grafik arus kas & status pembayaran iuran wajib anggota.';
             $('sidebar-period-label').textContent = 'Mode Ringkasan Publik';
         }
     }
@@ -896,11 +1039,11 @@ tailwind.config = {
             pengaturan: ['Pengaturan Kas — TEAM ONLINE', 'Atur batas minimal saldo kas, nominal iuran, dan backup data.', ['view-pengaturan']]
         };
 
-        const [title, sub, visible] = isAdmin ? views[tab] : ['Ringkasan Kas — TEAM ONLINE', 'Ringkasan agregat kas. Rincian transaksi hanya dapat diakses admin.', ['view-kpi', 'view-charts']];
+        const [title, sub, visible] = isAdmin ? views[tab] : ['Ringkasan Kas — TEAM ONLINE', 'Ringkasan saldo kas, grafik arus kas & status pembayaran iuran wajib anggota.', ['view-kpi', 'view-charts', 'view-public-dues']];
         $('header-title').textContent = title;
         $('header-subtitle').textContent = sub;
 
-        ['view-filter-bar', 'view-kpi', 'view-charts', 'card-approval', 'card-iuran', 'view-pengaturan', 'view-transaksi']
+        ['view-filter-bar', 'view-kpi', 'view-charts', 'view-public-dues', 'card-approval', 'card-iuran', 'view-pengaturan', 'view-transaksi']
             .forEach(id => $(id)?.classList.toggle('hidden', !visible.includes(id)));
 
         const widgetsEl = $('view-widgets');
@@ -932,42 +1075,156 @@ tailwind.config = {
 
     function exportExcel() {
         if (!isAdmin) return notify('Silakan masuk sebagai Admin untuk mengekspor Excel.', 'warning', 'Akses Terbatas');
+        if (typeof XLSX === 'undefined') {
+            return notify('Library Excel sedang dimuat. Coba beberapa detik lagi atau periksa koneksi internet.', 'warning', 'Library Belum Siap');
+        }
+
         const periodTxs = getFilteredTx();
-        const chrono = [...periodTxs].sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
-        const income = periodTxs.filter(t => t.type === 'masuk').reduce((s, t) => s + t.amount, 0);
-        const expenses = periodTxs.filter(t => t.type === 'keluar').reduce((s, t) => s + t.amount, 0);
-        const before = transactions.filter(t => dateFilter.startDate && t.date < dateFilter.startDate)
-            .reduce((b, t) => b + (t.type === 'masuk' ? t.amount : -t.amount), kasConfig.openingBalance);
+        const chrono = [...periodTxs].sort((a, b) => a.date.localeCompare(b.date) || String(a.id).localeCompare(String(b.id)));
+        const income = periodTxs.filter(t => t.type === 'masuk').reduce((s, t) => s + (Number(t.amount) || 0), 0);
+        const expenses = periodTxs.filter(t => t.type === 'keluar').reduce((s, t) => s + (Number(t.amount) || 0), 0);
+        const opening = Number(kasConfig.openingBalance) || 0;
+        const before = transactions
+            .filter(t => dateFilter.startDate && t.date < dateFilter.startDate)
+            .reduce((b, t) => b + (t.type === 'masuk' ? (Number(t.amount) || 0) : -(Number(t.amount) || 0)), opening);
+        const endingBalance = before + income - expenses;
+        const netFlow = income - expenses;
+        const minSaldo = Number(kasConfig.minSaldo) || 0;
+
+        const rpFormat = '"Rp" #,##0;-"Rp" #,##0;"Rp" 0';
+        const periodLabel = `${formatDateID(dateFilter.startDate)} s/d ${formatDateID(dateFilter.endDate)}`;
+        const exportedAt = new Date().toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' });
+
         let run = before;
+        const ledgerHeader = ['No', 'Tanggal', 'ID Transaksi', 'Keterangan', 'Kategori', 'PIC / Anggota', 'Jenis', 'Kas Masuk (Rp)', 'Kas Keluar (Rp)', 'Saldo Berjalan (Rp)', 'Status'];
+        const ledgerRows = [
+            ['-', formatDateID(dateFilter.startDate), '-', 'Saldo Awal Sebelum Periode', '-', '-', 'Saldo Awal', 0, 0, before, 'Aktif']
+        ];
 
-        const escXml = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        const sCell = v => `<Cell><Data ss:Type="String">${escXml(v)}</Data></Cell>`;
-        const nCell = v => `<Cell ss:StyleID="Currency"><Data ss:Type="Number">${Number(v) || 0}</Data></Cell>`;
-        const row = c => `<Row>${c.join('')}</Row>`;
+        chrono.forEach((t, idx) => {
+            const masuk = t.type === 'masuk' ? (Number(t.amount) || 0) : 0;
+            const keluar = t.type === 'keluar' ? (Number(t.amount) || 0) : 0;
+            run += masuk - keluar;
+            ledgerRows.push([
+                idx + 1,
+                formatDateID(t.date),
+                t.id || '-',
+                t.title || '-',
+                t.category || 'Lain-lain',
+                t.pic || '-',
+                t.type === 'masuk' ? 'Pemasukan' : 'Pengeluaran',
+                masuk,
+                keluar,
+                run,
+                t.status || 'Disetujui'
+            ]);
+        });
 
-        const summaryRows = [
-            row([sCell('Periode'), sCell(`${formatDateID(dateFilter.startDate)} - ${formatDateID(dateFilter.endDate)}`)]),
-            row([sCell('Saldo Awal Kas'), nCell(kasConfig.openingBalance)]),
-            row([sCell('Saldo Sebelum Periode'), nCell(before)]),
-            row([sCell('Total Pemasukan'), nCell(income)]),
-            row([sCell('Total Pengeluaran'), nCell(expenses)]),
-            row([sCell('Saldo Akhir Periode'), nCell(before + income - expenses)])
-        ].join('');
+        if (chrono.length === 0) {
+            ledgerRows.push(['-', '-', '-', 'Belum ada transaksi tercatat pada periode ini', '-', '-', '-', 0, 0, before, '-']);
+        }
 
-        const txRows = chrono.map(t => {
-            run += t.type === 'masuk' ? t.amount : -t.amount;
-            return row([sCell(t.id), sCell(t.date), sCell(t.title), sCell(t.category), sCell(t.pic), sCell(t.type === 'masuk' ? 'Pemasukan' : 'Pengeluaran'), nCell(t.type === 'masuk' ? t.amount : 0), nCell(t.type === 'keluar' ? t.amount : 0), nCell(run), sCell(t.status)]);
-        }).join('');
+        const ledgerTotalRow = ['', '', '', 'TOTAL MUTASI & SALDO AKHIR PERIODE', '', '', '', income, expenses, endingBalance, ''];
 
-        const xml = `<?xml version="1.0" encoding="UTF-8"?><?mso-application progid="Excel.Sheet"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"><Styles><Style ss:ID="Header"><Font ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#4F46E5" ss:Pattern="Solid"/></Style><Style ss:ID="Currency"><NumberFormat ss:Format="&quot;Rp&quot; #,##0;[Red]-&quot;Rp&quot; #,##0"/></Style></Styles><Worksheet ss:Name="Ringkasan"><Table>${summaryRows}</Table></Worksheet><Worksheet ss:Name="Transaksi"><Table>${row(['ID', 'Tanggal', 'Keterangan', 'Kategori', 'PIC', 'Jenis', 'Pemasukan', 'Pengeluaran', 'Saldo', 'Status'].map(sCell)).replace(/<Cell>/g, '<Cell ss:StyleID="Header">')}${txRows}</Table></Worksheet></Workbook>`;
-        const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([xml], { type: 'application/vnd.ms-excel' })), download: `Rekap_Kas_TEAM_ONLINE_${dateFilter.startDate}_sd_${dateFilter.endDate}.xls` });
-        a.click();
-        notify('Rekap Excel berhasil diunduh.', 'success', 'Ekspor Selesai');
+        const mainSheetData = [
+            ['LAPORAN REKAPITULASI & RIWAYAT KAS BERJALAN — TEAM ONLINE'],
+            [`Periode Laporan: ${periodLabel}  |  Diekspor: ${exportedAt}`],
+            [],
+            ['RINGKASAN SALDO & ARUS KAS'],
+            ['Keterangan', 'Nominal (Rp)', 'Catatan'],
+            ['Saldo Awal Kas Master', opening, 'Saldo dasar awal sebelum transaksi tercatat'],
+            ['Saldo Awal Periode Ini', before, `Akumulasi saldo sebelum ${formatDateID(dateFilter.startDate)}`],
+            ['Total Kas Masuk', income, `${periodTxs.filter(t => t.type === 'masuk').length} transaksi pemasukan`],
+            ['Total Kas Keluar', expenses, `${periodTxs.filter(t => t.type === 'keluar').length} transaksi pengeluaran`],
+            ['Arus Kas Bersih (Surplus / Defisit)', netFlow, netFlow >= 0 ? 'Surplus pada periode aktif' : 'Defisit pada periode aktif'],
+            ['Saldo Akhir Periode Ini', endingBalance, endingBalance >= minSaldo ? 'Aman (Di atas batas minimal)' : 'Perhatian (Di bawah batas minimal)'],
+            ['Batas Minimal Saldo Aman', minSaldo, 'Standar minimal kas operasional tim'],
+            [],
+            ['RIWAYAT KAS BERJALAN (MUTASI MASUK & KELUAR)'],
+            ledgerHeader,
+            ...ledgerRows,
+            ledgerTotalRow
+        ];
+
+        const wsMain = XLSX.utils.aoa_to_sheet(mainSheetData);
+        for (let r = 6; r <= 12; r++) {
+            if (wsMain[`B${r}`]) wsMain[`B${r}`].z = rpFormat;
+        }
+        const startLedgerRow = 16;
+        const endLedgerRow = startLedgerRow + ledgerRows.length;
+        for (let r = startLedgerRow; r <= endLedgerRow; r++) {
+            ['H', 'I', 'J'].forEach(col => {
+                if (wsMain[`${col}${r}`] && typeof wsMain[`${col}${r}`].v === 'number') {
+                    wsMain[`${col}${r}`].z = rpFormat;
+                }
+            });
+        }
+
+        const txSheetData = [ledgerHeader, ...ledgerRows, ledgerTotalRow];
+        const wsTx = XLSX.utils.aoa_to_sheet(txSheetData);
+        for (let r = 2; r <= ledgerRows.length + 2; r++) {
+            ['H', 'I', 'J'].forEach(col => {
+                if (wsTx[`${col}${r}`] && typeof wsTx[`${col}${r}`].v === 'number') {
+                    wsTx[`${col}${r}`].z = rpFormat;
+                }
+            });
+        }
+
+        const iuranNominal = Number(kasConfig.iuranWajib) || 0;
+        const duesHeader = ['No', 'Nama Anggota', 'Divisi / Role', `Periode (${duesPeriod})`, 'Nominal Wajib (Rp)', 'Status Pembayaran', 'Tanggal Bayar'];
+        const duesRows = members.length
+            ? members.map((m, idx) => {
+                const rec = getDueRecord(m);
+                return [
+                    idx + 1,
+                    m.name,
+                    m.role || 'Anggota Tim',
+                    duesPeriod,
+                    iuranNominal,
+                    rec.paid ? 'LUNAS' : 'BELUM LUNAS',
+                    rec.paid ? (rec.date || '-') : '-'
+                ];
+            })
+            : [['-', 'Belum ada anggota terdaftar', '-', duesPeriod, iuranNominal, '-', '-']];
+
+        const wsDues = XLSX.utils.aoa_to_sheet([duesHeader, ...duesRows]);
+        for (let r = 2; r <= duesRows.length + 1; r++) {
+            if (wsDues[`E${r}`] && typeof wsDues[`E${r}`].v === 'number') {
+                wsDues[`E${r}`].z = rpFormat;
+            }
+        }
+
+        const autoFitCols = (ws, rows) => {
+            const colWidths = [];
+            rows.forEach((row, rIdx) => {
+                if (rIdx <= 1) return;
+                row.forEach((val, cIdx) => {
+                    const str = typeof val === 'number' && val > 999 ? `Rp ${val.toLocaleString('id-ID')}` : String(val ?? '');
+                    colWidths[cIdx] = Math.min(44, Math.max(colWidths[cIdx] || 10, str.length + 4));
+                });
+            });
+            ws['!cols'] = colWidths.map(wch => ({ wch }));
+        };
+
+        autoFitCols(wsMain, mainSheetData);
+        autoFitCols(wsTx, txSheetData);
+        autoFitCols(wsDues, [duesHeader, ...duesRows]);
+
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, wsMain, 'Laporan Kas');
+        XLSX.utils.book_append_sheet(wb, wsTx, 'Riwayat Transaksi');
+        XLSX.utils.book_append_sheet(wb, wsDues, 'Iuran Anggota');
+
+        XLSX.writeFile(wb, `Rekap_Kas_TEAM_ONLINE_${dateFilter.startDate}_sd_${dateFilter.endDate}.xlsx`);
+        notify('File Excel (.xlsx) dengan riwayat kas berjalan berhasil diunduh.', 'success', 'Ekspor Selesai');
     }
 
     function renderAll() {
         renderKPIsAndCharts();
-        if (!isAdmin) return;
+        if (!isAdmin) {
+            renderPublicDues();
+            return;
+        }
         renderApprovals();
         renderDues();
         renderTransactions();
@@ -979,13 +1236,41 @@ tailwind.config = {
     }
 
     // ==========================================
-    // 7. INISIALISASI EVENT LISTENER
+    // 8. INISIALISASI EVENT LISTENER
     // ==========================================
     document.addEventListener('DOMContentLoaded', () => {
         $$('[data-icon]').forEach(el => { el.innerHTML = icon(el.dataset.icon, el.dataset.iconClass || 'w-4 h-4 shrink-0'); });
         syncSettingsInputs();
         selectDatePreset('semua', false);
         applyAccessMode();
+
+        // Tombol Portal Depan
+        const openAdminLoginModal = () => {
+            $('admin-login-error').classList.add('hidden');
+            toggleModal('admin-login-modal', true);
+            $('admin-email').focus();
+        };
+
+        $('btn-enter-admin')?.addEventListener('click', openAdminLoginModal);
+        $('btn-enter-guest')?.addEventListener('click', () => {
+            closePortal();
+            notify('Anda masuk sebagai Tamu (Mode Ringkasan & Status Iuran).', 'info', 'Mode Tamu');
+        });
+        $('btn-open-portal')?.addEventListener('click', () => openPortal(false));
+
+        // Filter & Periode Iuran Wajib pada Mode Tamu
+        $('public-dues-period')?.addEventListener('change', e => {
+            if (/^\d{4}-(0[1-9]|1[0-2])$/.test(e.target.value)) {
+                publicDuesPeriod = e.target.value;
+                renderPublicDues();
+            }
+        });
+        $('public-due-filter-group')?.addEventListener('click', e => {
+            const btn = e.target.closest('[data-action="filter-public-dues"]');
+            if (!btn) return;
+            publicDueFilter = btn.dataset.mode;
+            renderPublicDues();
+        });
 
         $('btn-open-sidebar')?.addEventListener('click', () => toggleSidebar());
         $('btn-close-sidebar')?.addEventListener('click', () => toggleSidebar(true));
@@ -996,7 +1281,7 @@ tailwind.config = {
         $('btn-open-tx-modal')?.addEventListener('click', () => openTxModal());
 
         // Login & Logout Admin
-        $('btn-admin-login')?.addEventListener('click', () => { $('admin-login-error').classList.add('hidden'); toggleModal('admin-login-modal', true); $('admin-email').focus(); });
+        $('btn-admin-login')?.addEventListener('click', openAdminLoginModal);
         $('btn-close-admin-login')?.addEventListener('click', () => toggleModal('admin-login-modal', false));
         $('admin-login-modal')?.addEventListener('click', e => { if (e.target.id === 'admin-login-modal') toggleModal('admin-login-modal', false); });
         $('admin-login-form')?.addEventListener('submit', async e => {
@@ -1018,7 +1303,7 @@ tailwind.config = {
                 btn.textContent = prevText;
             }
         });
-        $('btn-admin-logout')?.addEventListener('click', async () => { await signOutAdmin(); notify('Anda telah keluar dari mode admin.', 'info', 'Mode Publik'); });
+        $('btn-admin-logout')?.addEventListener('click', async () => { await signOutAdmin(); notify('Anda telah keluar dari akun admin.', 'info', 'Keluar Admin'); });
 
         // Filter Tanggal
         $('preset-buttons-container')?.addEventListener('click', e => { const btn = e.target.closest('[data-action="preset-date"]'); if (btn) selectDatePreset(btn.dataset.preset); });
@@ -1137,10 +1422,9 @@ tailwind.config = {
                     }))) return;
                     transactions = b.transactions;
                     approvalQueue = Array.isArray(b.approvalQueue) ? b.approvalQueue : [];
-                    members = b.members;
+                    members = normalizeMemberList(b.members);
                     kasConfig = { openingBalance: Number(b.kasConfig.openingBalance) || 0, minSaldo: Number(b.kasConfig.minSaldo) ?? 10000000, iuranWajib: Number(b.kasConfig.iuranWajib) || 250000, limitTanpaApproval: Number(b.kasConfig.limitTanpaApproval) ?? 500000 };
                     duesPeriod = b.duesPeriod || CURRENT_MONTH;
-                    normalizeMemberDues();
                     syncSettingsInputs();
                     syncMemberDatalist();
                     selectDatePreset('semua', false);
