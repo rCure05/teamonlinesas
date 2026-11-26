@@ -21,7 +21,29 @@ input[type="month"] {
     max-width: 100%;
 }
 
-/* Animasi halus untuk Alert & Modal seperti aplikasi modern */
+/* Animasi halus untuk Portal Depan, Alert & Modal */
+@keyframes portalFadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.portal-fade-in {
+    animation: portalFadeIn 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes pulseSlow {
+    0%, 100% { opacity: 0.75; transform: scale(1); }
+    50%      { opacity: 1; transform: scale(1.06); }
+}
+
+.portal-glow {
+    animation: pulseSlow 6s ease-in-out infinite;
+}
+
+.portal-glow-delay {
+    animation: pulseSlow 6s ease-in-out 3s infinite;
+}
+
 .toast-item {
     transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.28s ease;
 }
